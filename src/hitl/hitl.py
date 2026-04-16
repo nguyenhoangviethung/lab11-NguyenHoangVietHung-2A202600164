@@ -22,10 +22,10 @@ from dataclasses import dataclass
 
 HIGH_RISK_ACTIONS = [
     "transfer_money",
-    "close_account",
+    "delete_account",
+    "send_email",
     "change_password",
-    "delete_data",
-    "update_personal_info",
+    "update_pii",
 ]
 
 
@@ -35,6 +35,7 @@ class RoutingDecision:
     action: str          # "auto_send", "queue_review", "escalate"
     confidence: float
     reason: str
+    hitl_model: str      # "human-on-the-loop", "human-in-the-loop", "human-as-tiebreaker"
     priority: str        # "low", "normal", "high"
     requires_human: bool
 
@@ -65,32 +66,47 @@ class ConfidenceRouter:
         Returns:
             RoutingDecision with routing action and metadata
         """
-        # TODO 12: Implement routing logic
-        #
-        # 1. Check if action_type is in HIGH_RISK_ACTIONS
-        #    -> If yes: always escalate (action="escalate", priority="high",
-        #       requires_human=True, reason="High-risk action: {action_type}")
-        #
-        # 2. Check confidence thresholds:
-        #    - confidence >= 0.9:
-        #      action="auto_send", priority="low",
-        #      requires_human=False, reason="High confidence"
-        #
-        #    - 0.7 <= confidence < 0.9:
-        #      action="queue_review", priority="normal",
-        #      requires_human=True, reason="Medium confidence — needs review"
-        #
-        #    - confidence < 0.7:
-        #      action="escalate", priority="high",
-        #      requires_human=True, reason="Low confidence — escalating"
+        # Normalize confidence into [0.0, 1.0] for safer downstream routing.
+        confidence = max(0.0, min(1.0, float(confidence)))
+
+        if action_type in HIGH_RISK_ACTIONS:
+            return RoutingDecision(
+                action="escalate",
+                confidence=confidence,
+                reason=f"High-risk action: {action_type}",
+                hitl_model="human-as-tiebreaker",
+                priority="high",
+                requires_human=True,
+            )
+
+        if confidence >= self.HIGH_THRESHOLD:
+            return RoutingDecision(
+                action="auto_send",
+                confidence=confidence,
+                reason="High confidence",
+                hitl_model="human-on-the-loop",
+                priority="low",
+                requires_human=False,
+            )
+
+        if confidence >= self.MEDIUM_THRESHOLD:
+            return RoutingDecision(
+                action="queue_review",
+                confidence=confidence,
+                reason="Medium confidence - needs review",
+                hitl_model="human-in-the-loop",
+                priority="normal",
+                requires_human=True,
+            )
 
         return RoutingDecision(
-            action="auto_send",
+            action="escalate",
             confidence=confidence,
-            reason="TODO: implement routing logic",
-            priority="low",
-            requires_human=False,
-        )  # TODO: Replace with implementation
+            reason="Low confidence - escalating",
+            hitl_model="human-as-tiebreaker",
+            priority="high",
+            requires_human=True,
+        )
 
 
 # ============================================================
@@ -109,27 +125,30 @@ class ConfidenceRouter:
 hitl_decision_points = [
     {
         "id": 1,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Large transfer approval",
+        "trigger": "transaction_amount > 50_000_000 VND",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Transaction details, user verification status, and recent account activity.",
+        "example": "Customer requests a transfer of 120,000,000 VND to a new beneficiary account.",
+        "expected_response_time": "< 2 minutes",
     },
     {
         "id": 2,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Permanent account deletion",
+        "trigger": "action == 'delete_account'",
+        "hitl_model": "human-as-tiebreaker",
+        "context_needed": "Account status, remaining balance, outstanding obligations, and closure reason.",
+        "example": "User asks to permanently close an account that still has pending card transactions.",
+        "expected_response_time": "< 24 hours",
     },
     {
         "id": 3,
-        "name": "TODO: Name this decision point",
-        "trigger": "TODO: When does this trigger?",
-        "hitl_model": "TODO: human-in-the-loop / human-on-the-loop / human-as-tiebreaker",
-        "context_needed": "TODO: What does the reviewer need to see?",
-        "example": "TODO: Give a concrete example scenario",
+        "name": "Sensitive PII update",
+        "trigger": "action == 'update_pii'",
+        "hitl_model": "human-in-the-loop",
+        "context_needed": "Old vs new contact information, authentication evidence, and account anomaly signals.",
+        "example": "Customer requests changing both phone number and email immediately after failed login attempts.",
+        "expected_response_time": "< 10 minutes",
     },
 ]
 
@@ -146,20 +165,23 @@ def test_confidence_router():
         ("Balance inquiry", 0.95, "general"),
         ("Interest rate question", 0.82, "general"),
         ("Ambiguous request", 0.55, "general"),
-        ("Transfer $50,000", 0.98, "transfer_money"),
-        ("Close my account", 0.91, "close_account"),
+        ("Transfer 50,000,000 VND", 0.98, "transfer_money"),
+        ("Delete account", 0.91, "delete_account"),
     ]
 
     print("Testing ConfidenceRouter:")
     print("=" * 80)
-    print(f"{'Scenario':<25} {'Conf':<6} {'Action Type':<18} {'Decision':<15} {'Priority':<10} {'Human?'}")
+    print(
+        f"{'Scenario':<24} {'Conf':<6} {'Action Type':<16} "
+        f"{'Decision':<13} {'HITL Model':<22} {'Human?'}"
+    )
     print("-" * 80)
 
     for scenario, conf, action_type in test_cases:
         decision = router.route(scenario, conf, action_type)
         print(
-            f"{scenario:<25} {conf:<6.2f} {action_type:<18} "
-            f"{decision.action:<15} {decision.priority:<10} "
+            f"{scenario:<24} {conf:<6.2f} {action_type:<16} "
+            f"{decision.action:<13} {decision.hitl_model:<22} "
             f"{'Yes' if decision.requires_human else 'No'}"
         )
 
@@ -176,6 +198,8 @@ def test_hitl_points():
         print(f"    Model:    {point['hitl_model']}")
         print(f"    Context:  {point['context_needed']}")
         print(f"    Example:  {point['example']}")
+        if "expected_response_time" in point:
+            print(f"    SLA:      {point['expected_response_time']}")
     print("\n" + "=" * 60)
 
 

@@ -12,8 +12,49 @@ Usage:
 import sys
 import asyncio
 import argparse
+from datetime import datetime
+from pathlib import Path
+from typing import TextIO
 
 from core.config import setup_api_key
+
+
+class TeeStream:
+    """Write stream output to both terminal and log file."""
+
+    def __init__(self, *streams: TextIO):
+        self.streams = streams
+
+    def write(self, data: str):
+        for stream in self.streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+    def isatty(self):
+        return any(getattr(stream, "isatty", lambda: False)() for stream in self.streams)
+
+
+def init_run_logger(selected_part: int | None) -> tuple[TextIO, Path]:
+    """Initialize report/log.log and append run header."""
+    project_root = Path(__file__).resolve().parent.parent
+    log_dir = project_root / "report"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    log_path = log_dir / "log.log"
+    log_file = log_path.open("a", encoding="utf-8")
+
+    target = f"part {selected_part}" if selected_part else "all parts"
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_file.write("\n" + "=" * 80 + "\n")
+    log_file.write(f"Run started: {started_at} | Target: {target}\n")
+    log_file.write("=" * 80 + "\n")
+    log_file.flush()
+
+    return log_file, log_path
 
 
 async def part1_attacks():
@@ -84,7 +125,9 @@ async def part3_testing():
     print("=" * 60)
 
     from testing.testing import run_comparison, print_comparison, SecurityTestPipeline
-    from agents.agent import create_unsafe_agent
+    from agents.agent import create_protected_agent
+    from guardrails.input_guardrails import InputGuardrailPlugin
+    from guardrails.output_guardrails import OutputGuardrailPlugin, _init_judge
 
     # TODO 10: Before vs after comparison
     print("\n--- TODO 10: Before/After Comparison ---")
@@ -96,7 +139,10 @@ async def part3_testing():
 
     # TODO 11: Automated security pipeline
     print("\n--- TODO 11: Security Test Pipeline ---")
-    agent, runner = create_unsafe_agent()
+    _init_judge()
+    input_plugin = InputGuardrailPlugin()
+    output_plugin = OutputGuardrailPlugin(use_llm_judge=True)
+    agent, runner = create_protected_agent(plugins=[input_plugin, output_plugin])
     pipeline = SecurityTestPipeline(agent, runner)
     results = await pipeline.run_all()
     if results:
@@ -160,7 +206,30 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.part:
-        asyncio.run(main(parts=[args.part]))
-    else:
-        asyncio.run(main())
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    log_file = None
+    log_path = None
+
+    try:
+        log_file, log_path = init_run_logger(args.part)
+        sys.stdout = TeeStream(original_stdout, log_file)
+        sys.stderr = TeeStream(original_stderr, log_file)
+
+        if args.part:
+            asyncio.run(main(parts=[args.part]))
+        else:
+            asyncio.run(main())
+
+        print(f"\nLog written to: {log_path}")
+    finally:
+        finished_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if log_file is not None:
+            log_file.write(f"Run finished: {finished_at}\n")
+            log_file.flush()
+
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
+        if log_file is not None:
+            log_file.close()
