@@ -52,7 +52,7 @@ User Input
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
-│  LLM (Gemini)        │ ← Generate response
+│  LLM (Gemma 3)       │ ← Generate response
 └─────────┬───────────┘
           ▼
 ┌─────────────────────┐
