@@ -83,7 +83,7 @@ python hitl/hitl.py
 
 - **Google ADK** — Agent Development Kit (plugins, runners)
 - **NeMo Guardrails** — NVIDIA framework with Colang (declarative safety rules)
-- **Gemini 2.5 Flash/Flash Lite** — LLM backend (you can switch to other models if you want)
+- **Gemma 3 (`gemma-3-27b-it`)** — LLM backend (you can switch to other models if you want)
 
 ## Lab Structure (2.5 hours)
 
@@ -106,12 +106,12 @@ python hitl/hitl.py
 | # | Description | Framework |
 |---|-------------|-----------|
 | 1 | Write 5 adversarial prompts | - |
-| 2 | Generate attack test cases with AI | Gemini |
+| 2 | Generate attack test cases with AI | Gemma 3 |
 | 3 | Injection detection (regex) | Python |
 | 4 | Topic filter | Python |
 | 5 | Input Guardrail Plugin | Google ADK |
 | 6 | Content filter (PII, secrets) | Python |
-| 7 | LLM-as-Judge safety check | Gemini |
+| 7 | LLM-as-Judge safety check | Gemma 3 |
 | 8 | Output Guardrail Plugin | Google ADK |
 | 9 | NeMo Guardrails Colang config | NeMo |
 | 10 | Rerun 5 attacks with guardrails | Google ADK |
@@ -124,7 +124,7 @@ python hitl/hitl.py
 - [OWASP Top 10 for LLM](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 - [NeMo Guardrails](https://github.com/NVIDIA/NeMo-Guardrails)
 - [Google ADK Documentation](https://google.github.io/adk-docs/)
-- [Official Google's Gemini cookbook](https://github.com/google-gemini/cookbook/blob/main/examples/gemini_google_adk_model_guardrails.ipynb)
+- [Google Gen AI Python SDK](https://github.com/googleapis/python-genai)
 - [AI Safety Fundamentals](https://aisafetyfundamentals.com/)
 - [AI Red Teaming Guide](https://github.com/requie/AI-Red-Teaming-Guide)
 - [antoan.ai - AI Safety Vietnam](https://antoan.ai)
